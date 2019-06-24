@@ -6,6 +6,8 @@ from sklearn.linear_model import LinearRegression
 import traceback
 import time
 import sys
+import requests
+
 
 def c_run_str_code(inputs, str_code):
 #    return 'RUNED'
@@ -90,23 +92,30 @@ class BoxCode():
         return self.isRunned()
 
 
-def run_celery_project(allboxes, project_id):
+def run_celery_project(allboxes, project_id, task, host):
 
     # REPLACE THIS QUERY FOR NEW ENDPOINT TO BACKEND TO RETRIVE ALL JSON DATA FROM PROJECT
-    project = Project.query.filter(Project.id == project_id).first()
+    # project = Project.query.filter(Project.id == project_id).first()
+    
+    # r = requests.get('https://api.github.com/user', auth=('user', 'pass'))
+    
     print("START CELERY TASK")
-    allboxes = []
-    if project:
-        json_wf = project.json
-        d_json = json.loads(json_wf)
-        print(type(d_json))
-        print(d_json)
+    if allboxes is None:
+        allboxes=[]
+        # json_wf = project.json
+        # d_json = json.loads(json_wf)
+        # print(type(d_json))
+        r = requests.get(host+'/projects/get_internal?id='+project_id)
+        # print(r)
+        d_json = json.loads(r.json()['json'])
+        # print(d_json)
         # allboxes = []
         #for x in d_json['nodes']:
         #    print("AAAA", x)
         for x in d_json['nodes']:
 #            print("milog",d_json['nodes'][0]['type'])
             box_type = d_json['nodes'][x]['type']
+            print(box_type)
             if (box_type[0:7] == 'Dataset'):
                 # node_name = d_json['nodes'][x]['id']
                 node_name = x
@@ -171,23 +180,23 @@ def run_celery_project(allboxes, project_id):
 
         # now select one untrained box and train until allboxes trained
         # TODO IN random way
-        pendingTrain = True
-        while pendingTrain:
-            pendingTrain=False
-            for x in allboxes:
-                if x.isRunned()==False:
-                    x.run()
-                    pendingTrain=True
+    pendingTrain = True
+    while pendingTrain:
+        pendingTrain=False
+        for x in allboxes:
+            if x.isRunned()==False:
+                x.run()
+                pendingTrain=True
 
         # print("BOX_ID-->",box_id)
     return allboxes
 
-def get_key_from_redis():
+def get_key_from_redis(project_id):
 
     keyId = '1212'
 
-    ret = KeyId
-    return None
+    ret = keyId
+    return True
 
 def run_str_code(func):
     global ret
@@ -203,13 +212,14 @@ def run_str_code(func):
     return ret
 
 
-if __name__ == 'main':
-    allproject = None
-    project_id = sys.argv[1]
-    while True
-        task=get_key_from_redis(project_id)
-        if task:
-            allproject = run_celery_project(allproject, project_id, task)
-
-        time.sleep(1)
-
+allproject = None
+project_id = sys.argv[1]
+host = sys.argv[2]
+print("Starting project", project_id, host)
+while True:
+    print("ASK")
+    task=get_key_from_redis(project_id)
+    if task:
+        print("NEW TASK")
+        allproject = run_celery_project(allproject, project_id, task, host)
+    time.sleep(1)
