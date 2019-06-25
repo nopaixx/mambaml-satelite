@@ -7,14 +7,28 @@ import traceback
 import time
 import sys
 import requests
+import traceback
 
 
-def c_run_str_code(inputs, str_code):
+def c_run_str_code(inputs, str_code, depend):
 #    return 'RUNED'
     global ret
     ret = []
     print("START RUNNING CLIENT CODE")
-    LOC = str_code
+    func_name=str_code.split('(')[0][4:].strip()
+
+    sniped_code ="""
+tmp_ret = FUNC_NAME(inputs) 
+for x in tmp_ret:
+    ret.append(x)"""
+   
+    sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
+    LOC = ""
+    if depend:
+        LOC = depend + str_code + sniped_code
+    else:
+        LOC = str_code + sniped_code
+    print(LOC)
     print("END RUN CLIENT CODE")    
     exec(LOC)
 
@@ -31,8 +45,9 @@ class InputPort():
 
 class BoxCode():
 
-    def __init__(self, str_code, box_id, n_inputs, n_outputs, json):
+    def __init__(self, str_code, box_id, n_inputs, n_outputs, json, depend):
         self.str_code = str_code
+        self.depend  = depend
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
         self.inputs = []
@@ -61,13 +76,15 @@ class BoxCode():
 
             myinputs = []
 
+            self.json['nodes'][self.box_id]['properties']['payload']['result']=dict()
+
             for i_input in self.inputs:
                 i_input.parentBox.run()
                 print("NUM TOTAL OUTS", len(i_input.parentBox.outputs))
                 print("BUSCANDO INPUT PORT", i_input.numport)
                 myinputs.append(i_input.parentBox.outputs[i_input.numport-i_input.parentBox.n_inputs])
 
-            out = c_run_str_code(myinputs, self.str_code)
+            out = c_run_str_code(myinputs, self.str_code, self.depend)
 
             for p_out in out:
                 print("añadiendo out", p_out)
@@ -75,16 +92,18 @@ class BoxCode():
         # after run 
             index = 0
             for out in self.outputs:
+                print(type(self.json))
+                self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
-                self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(100).to_json()
-                self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = out.columns.to_json()
-
+                if type(out) == type(pd.DataFrame()):
+                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(100).to_json()
+                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = out.columns.to_json()
 
                 index = index + 1
             self.setStatus('RUNNED')
         except Exception as e:
-            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = e.message
-            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = e.args
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = traceback.print_exc()
             raise Exception('Run error check error message results!')
             return False
@@ -100,6 +119,7 @@ def run_celery_project(allboxes, project_id, task, host):
     # r = requests.get('https://api.github.com/user', auth=('user', 'pass'))
     
     print("START CELERY TASK")
+    d_json = ""
     try:
         if allboxes is None:
             allboxes=[]
@@ -123,25 +143,27 @@ def run_celery_project(allboxes, project_id, task, host):
                     # TODO OK for now special case for dataset!i
                     # regressor = DecisionTreeRegressor(random_state=0)
                     # cross_val_score(regressor, boston.data, boston.target, cv=10)                  
-                    # import numpy as np
+                    import numpy as np
                     # from sklearn.linear_model import LinearRegression
-                    # X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
-                    box = BoxCode("", node_name, 0, 1, d_json)
+                    X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
+                    box = BoxCode("", node_name, 0, 1, d_json,"")
                     box.setStatus('RUNNED')
-                    box.outputs.append(boston)
+                    box.outputs.append(X)
                     # for now dummy data on dataset
                     allboxes.append(box)
-                elif (box_type == ('Python Script')):
+                elif (box_type == ('Python Module-Python Script')):
                     # TODO añadir box_type categoria sub categoria etc...
                     # se podrian llamar igual pero pertencer a otra categria
                     # no es importante pero si se pued mejor...
                     # O ES UN ENDPOINT
                     # node_name = d_json['nodes'][x]['id']
                     node_name = x
+                    print(node_name)
                     python_code = d_json['nodes'][x]['properties']['payload']['python_code']
                     n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
                     n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
-                    box = BoxCode(python_code, node_name, n_inputs, n_outputs, d_json)
+                    depend = d_json['nodes'][x]['properties']['payload']['depen_code']
+                    box = BoxCode(python_code, node_name, n_inputs, n_outputs, d_json, depend)
                     allboxes.append(box)
 
         # TODO do it better
@@ -167,6 +189,7 @@ def run_celery_project(allboxes, project_id, task, host):
             
             # need locate dest_box
                 dest_box = getboxby_name(dest_box_id)
+                print(dest_box_id)
                 dest_id = getportid_to_index(dest_input_port)
                 if dest_box.box_id != orig_box.box_id:
                     input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
@@ -189,6 +212,7 @@ def run_celery_project(allboxes, project_id, task, host):
     except Exception as e:
         requests.get(host+'/projects/set_status?id='+project_id+'&data=NONE&stat=ERROR'+'&error='+str(e))
         print("END WITH ERROR", e)
+        traceback.print_exc()
 
     return allboxes
 
