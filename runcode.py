@@ -100,103 +100,107 @@ def run_celery_project(allboxes, project_id, task, host):
     # r = requests.get('https://api.github.com/user', auth=('user', 'pass'))
     
     print("START CELERY TASK")
-    if allboxes is None:
-        allboxes=[]
-        # json_wf = project.json
-        # d_json = json.loads(json_wf)
-        # print(type(d_json))
-        r = requests.get(host+'/projects/get_internal?id='+project_id)
-        # print(r)
-        d_json = json.loads(r.json()['json'])
-        # print(d_json)
-        # allboxes = []
-        #for x in d_json['nodes']:
-        #    print("AAAA", x)
-        for x in d_json['nodes']:
-#            print("milog",d_json['nodes'][0]['type'])
-            box_type = d_json['nodes'][x]['type']
-            print(box_type)
-            if (box_type[0:7] == 'Dataset'):
-                # node_name = d_json['nodes'][x]['id']
-                node_name = x
-                # TODO OK for now special case for dataset!i
-                from sklearn.datasets import load_boston
-                from sklearn.model_selection import cross_val_score
-                from sklearn.tree import DecisionTreeRegressor
-                boston = load_boston()
-
-                # regressor = DecisionTreeRegressor(random_state=0)
-                # cross_val_score(regressor, boston.data, boston.target, cv=10)                  
-                # import numpy as np
-                # from sklearn.linear_model import LinearRegression
-                # X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
-                box = BoxCode("", node_name, 0, 1, d_json)
-                box.setStatus('RUNNED')
-                box.outputs.append(boston)
-                # for now dummy data on dataset
-                allboxes.append(box)
-
-            elif (box_type == ('Python Script')):
-                # TODO añadir box_type categoria sub categoria etc...
-                # se podrian llamar igual pero pertencer a otra categria
-                # no es importante pero si se pued mejor...
-                # O ES UN ENDPOINT
-                # node_name = d_json['nodes'][x]['id']
-                node_name = x
-                python_code = d_json['nodes'][x]['properties']['payload']['python_code']
-                n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
-                n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
-                box = BoxCode(python_code, node_name, n_inputs, n_outputs, d_json)
-                allboxes.append(box)
+    try:
+        if allboxes is None:
+            allboxes=[]
+            # json_wf = project.json
+            # d_json = json.loads(json_wf)
+            # print(type(d_json))
+            r = requests.get(host+'/projects/get_internal?id='+project_id)
+            # print(r)
+            d_json = json.loads(r.json()['json'])
+            # print(d_json)
+            # allboxes = []
+            #for x in d_json['nodes']:
+            #    print("AAAA", x)
+            for x in d_json['nodes']:
+#                print("milog",d_json['nodes'][0]['type'])
+                box_type = d_json['nodes'][x]['type']
+                print(box_type)
+                if (box_type[0:7] == 'Dataset'):
+                    # node_name = d_json['nodes'][x]['id']
+                    node_name = x
+                    # TODO OK for now special case for dataset!i
+                    # regressor = DecisionTreeRegressor(random_state=0)
+                    # cross_val_score(regressor, boston.data, boston.target, cv=10)                  
+                    # import numpy as np
+                    # from sklearn.linear_model import LinearRegression
+                    # X = np.array([[1, 1], [1, 2], [2, 2], [2, 3]])
+                    box = BoxCode("", node_name, 0, 1, d_json)
+                    box.setStatus('RUNNED')
+                    box.outputs.append(boston)
+                    # for now dummy data on dataset
+                    allboxes.append(box)
+                elif (box_type == ('Python Script')):
+                    # TODO añadir box_type categoria sub categoria etc...
+                    # se podrian llamar igual pero pertencer a otra categria
+                    # no es importante pero si se pued mejor...
+                    # O ES UN ENDPOINT
+                    # node_name = d_json['nodes'][x]['id']
+                    node_name = x
+                    python_code = d_json['nodes'][x]['properties']['payload']['python_code']
+                    n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
+                    n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
+                    box = BoxCode(python_code, node_name, n_inputs, n_outputs, d_json)
+                    allboxes.append(box)
 
         # TODO do it better
-        def getboxby_name(box_name):
-            for x in allboxes:
-                if x.box_id == box_name:
-                    return x
-            return None
-        # TODO do it better
-        def getportid_to_index(portid):
-            return portid.split('port')[1]
+            def getboxby_name(box_name):
+                for x in allboxes:
+                    if x.box_id == box_name:
+                        return x
+                return None
+            # TODO do it better
+            def getportid_to_index(portid):
+                return portid.split('port')[1]
 
-        for x in d_json['links']:
-            orig_box_id = d_json['links'][x]['from']['nodeId']
-            orig_input_port = d_json['links'][x]['from']['portId']
+            for x in d_json['links']:
+                orig_box_id = d_json['links'][x]['from']['nodeId']
+                orig_input_port = d_json['links'][x]['from']['portId']
             
-            dest_box_id = d_json['links'][x]['to']['nodeId']
-            dest_input_port = d_json['links'][x]['to']['portId']
+                dest_box_id = d_json['links'][x]['to']['nodeId']
+                dest_input_port = d_json['links'][x]['to']['portId']
 
             # need locate orig_box
-            orig_box = getboxby_name(orig_box_id)
-            orig_id = getportid_to_index(orig_input_port)
+                orig_box = getboxby_name(orig_box_id)
+                orig_id = getportid_to_index(orig_input_port)
             
             # need locate dest_box
-            dest_box = getboxby_name(dest_box_id)
-            dest_id = getportid_to_index(dest_input_port)
-            if dest_box.box_id != orig_box.box_id:
-                input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
-                dest_box.inputs.append(input_port)
+                dest_box = getboxby_name(dest_box_id)
+                dest_id = getportid_to_index(dest_input_port)
+                if dest_box.box_id != orig_box.box_id:
+                    input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
+                    dest_box.inputs.append(input_port)
 
 
         # now select one untrained box and train until allboxes trained
         # TODO IN random way
-    pendingTrain = True
-    while pendingTrain:
-        pendingTrain=False
-        for x in allboxes:
-            if x.isRunned()==False:
-                x.run()
-                pendingTrain=True
+        pendingTrain = True
+        while pendingTrain:
+            pendingTrain=False
+            for x in allboxes:
+                if x.isRunned()==False:
+                    x.run()
+                    pendingTrain=True
 
         # print("BOX_ID-->",box_id)
+        requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=OK&error=NONE')
+        print("END OK")
+    except Exception as e:
+        requests.get(host+'/projects/set_status?id='+project_id+'&data=NONE&stat=ERROR'+'&error='+str(e))
+        print("END WITH ERROR", e)
+
     return allboxes
 
 def get_key_from_redis(project_id):
-
-    keyId = '1212'
-
-    ret = keyId
-    return True
+    r = requests.get(host+'/projects/get_status?id='+project_id)
+   
+    ret = r.json()    
+    print(ret)
+    if ret['status'] == 'PENDING':
+        return ret['task']
+        
+    return False
 
 def run_str_code(func):
     global ret
@@ -218,8 +222,15 @@ host = sys.argv[2]
 print("Starting project", project_id, host)
 while True:
     print("ASK")
-    task=get_key_from_redis(project_id)
-    if task:
-        print("NEW TASK")
-        allproject = run_celery_project(allproject, project_id, task, host)
-    time.sleep(1)
+    try:
+        task=get_key_from_redis(project_id)
+        if task:
+            print("NEW TASK")
+            allproject = run_celery_project(None, project_id, task, host)
+        else:
+            print("NOTHING TO DO", task)
+        time.sleep(1)
+    except Exception as e:
+        print(e)
+        time.sleep(1)
+        pass
