@@ -149,10 +149,6 @@ class BoxCode():
 
 def run_celery_project(allboxes, project_id, task, host):
 
-    # REPLACE THIS QUERY FOR NEW ENDPOINT TO BACKEND TO RETRIVE ALL JSON DATA FROM PROJECT
-    # project = Project.query.filter(Project.id == project_id).first()
-    
-    # r = requests.get('https://api.github.com/user', auth=('user', 'pass'))
     # TODO do it better
     def getboxby_name(box_name, boxes):
         for x in boxes:
@@ -241,6 +237,11 @@ def run_celery_project(allboxes, project_id, task, host):
             # DO it easy first we start with changed boxes
             # and existing boxes
             print("INIT")
+
+            # at this point we can clear all input ports and recreate again
+            # we trust in hasChange recibed from fronted
+            clear_all_input_ports(allboxes)
+
             changedBox = []
             # this loop only analize changed boxes
             for x in d_json['nodes']:
@@ -287,9 +288,6 @@ def run_celery_project(allboxes, project_id, task, host):
                 else:
                     print("Nothing to do")
 
-            # at this point we can clear all input ports and recreate again
-            # we trust in hasChange recibed from fronted
-            clear_all_input_ports(allboxes)
             
             # at this point we can regenerate all links again
             for x in d_json['links']:
@@ -321,6 +319,8 @@ def run_celery_project(allboxes, project_id, task, host):
                         if getboxby_name(inputlink.parentBox.box_id, changedBox) or 
                            getboxby_name(inputlink.parentBox.box_id, newboxes):
                            # then this box need to be re-run
+                           # this box not changed but need to be retrained some parent change
+                           # or some parent is new box
                                box.setStatus('INIT')
                                changedBox.append(box)
                                hasmore = True
@@ -329,9 +329,6 @@ def run_celery_project(allboxes, project_id, task, host):
             print('train on task only')
 
         
-        # now select one untrained box and train until allboxes trained
-        # TODO IN random way
-        # TRAIN ALL MODEL OR ONLY TRAIN UNTIL SELECTED BOX
         if task == 'ALL':
             # if we retrain ALL then clean an retrain
             pendingTrain = True
