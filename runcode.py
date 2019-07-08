@@ -53,7 +53,8 @@ class InputPort():
 class BoxCode():
 
     def __init__(self, str_code, box_id, n_inputs,
-                 n_outputs, json, depend, params, changed):
+                 n_outputs, json, depend, params, changed,
+                 project_id, host):
         self.str_code = str_code
         self.depend  = depend
         self.n_inputs = n_inputs
@@ -65,6 +66,8 @@ class BoxCode():
         self.json = json
         self.params = params
         self.changed = changed
+        self.project_id = project_id
+        self.host = host
 
     def clear_inputs(self):
         for x in inputs:
@@ -72,13 +75,13 @@ class BoxCode():
         self.inputs = []
 
     def setChangedBox(self, str_code, box_id, n_inputs, 
-                      n_outputs, json, depend, params, changed):
+                      n_outputs, json, depend, params, changed, project_id, host):
         # to set trained false
         self.freespace()
         # if this box changed then result of preview run is empty
         self.json['nodes'][self.box_id]['properties']['payload']['result']=dict()
         # reset all parameter with new values
-        self.__init__(str_code, box_id, n_inputs, n_outputs, json, depend, params, changed)
+        self.__init__(str_code, box_id, n_inputs, n_outputs, json, depend, params, changed, project_id, host)
         return None
 
     def isRunned(self):
@@ -90,6 +93,8 @@ class BoxCode():
     def setStatus(self, status):
         # TODO update get project status
         self.status = status
+        requests.get(self.host+'/projects/set_status?id='+self.project_id+'&stat='+status+'&task='+self.box_id,)
+
         return self.status
 
     def freespace(self):
@@ -141,6 +146,7 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = traceback.print_exc()
+            self.setStatus('ERROR')
             raise Exception('Run error check error message results!')
             return False
         print("End running", self.box_id, self.isRunned())
@@ -173,8 +179,6 @@ def run_celery_project(allboxes, project_id, task, host):
 
         gc.collect()
 
-
-    print("START CELERY TASK")
     d_json = ""
     try:
         if allboxes is None or task == 'ALL':
@@ -190,7 +194,7 @@ def run_celery_project(allboxes, project_id, task, host):
                     import numpy as np
                     import pandas as pd
                     X = pd.DataFrame(np.array([[1, 1], [1, 2], [2, 2], [2, 3]]))
-                    box = BoxCode("", node_name, 0, 1, d_json,"", "", False)
+                    box = BoxCode("", node_name, 0, 1, d_json,"", "", False, project_id, host)
                     box.setStatus('RUNNED')
                     box.outputs.append(X)
                     # for now dummy data on dataset
@@ -206,7 +210,7 @@ def run_celery_project(allboxes, project_id, task, host):
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
                     
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs, 
-                                  d_json, depend, params, False)
+                                  d_json, depend, params, False, project_id, host)
                     allboxes.append(box)
 
             for x in d_json['links']:
@@ -259,7 +263,7 @@ def run_celery_project(allboxes, project_id, task, host):
                             params = d_json['nodes'][x]['properties']['payload']['parameters']
 
                         box.setChangedBox(python_code, node_name, n_inputs, n_outputs,
-                                          d_json, depend, params, False)
+                                          d_json, depend, params, False, project_id, host)
 
                         # save changed box and existing maybe need latter
                         changedBox.append(box)
@@ -282,7 +286,7 @@ def run_celery_project(allboxes, project_id, task, host):
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
 
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs,
-                                  d_json, depend, params, False)
+                                  d_json, depend, params, False, project_id, host)
                     allboxes.append(box)
                     newboxes.append(box)
                 else:
@@ -325,9 +329,6 @@ def run_celery_project(allboxes, project_id, task, host):
                                changedBox.append(box)
                                hasmore = True
                                break
-
-            print('train on task only')
-
         
         if task == 'ALL':
             # if we retrain ALL then clean an retrain
