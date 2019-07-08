@@ -55,6 +55,8 @@ class BoxCode():
     def __init__(self, str_code, box_id, n_inputs,
                  n_outputs, json, depend, params, changed,
                  project_id, host):
+        self.project_id = project_id
+        self.host = host
         self.str_code = str_code
         self.depend  = depend
         self.n_inputs = n_inputs
@@ -66,8 +68,6 @@ class BoxCode():
         self.json = json
         self.params = params
         self.changed = changed
-        self.project_id = project_id
-        self.host = host
 
     def clear_inputs(self):
         for x in inputs:
@@ -209,6 +209,7 @@ def run_celery_project(allboxes, project_id, task, host):
                     if 'parameters' in d_json['nodes'][x]['properties']['payload']:
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
                     
+                    print(project_id, host)
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs, 
                                   d_json, depend, params, False, project_id, host)
                     allboxes.append(box)
@@ -320,8 +321,8 @@ def run_celery_project(allboxes, project_id, task, host):
                 hasmore = False
                 for box in allboxes:
                     for inputlink in box.inputs:
-                        if getboxby_name(inputlink.parentBox.box_id, changedBox) or 
-                           getboxby_name(inputlink.parentBox.box_id, newboxes):
+                        if (getboxby_name(inputlink.parentBox.box_id, changedBox) or 
+                           getboxby_name(inputlink.parentBox.box_id, newboxes)):
                            # then this box need to be re-run
                            # this box not changed but need to be retrained some parent change
                            # or some parent is new box
@@ -359,8 +360,10 @@ def get_key_from_redis(project_id):
     r = requests.get(host+'/projects/get_status?id='+project_id)
    
     ret = r.json()    
-    print(ret)
-    if ret['status'] == 'PENDING':
+    print(ret['status'])
+    d_json = json.loads(ret['status'])
+    print(d_json)
+    if d_json['project_stat'] == 'PENDING':
         return ret['task']
         
     return False
@@ -387,13 +390,14 @@ while True:
     print("ASK")
     try:
         task=get_key_from_redis(project_id)
+        print("aaa", task)
         if task:
-            print("NEW TASK", task)
+            print("NEW TASK", host)
             allproject = run_celery_project(allproject, project_id, task, host)
         else:
             print("NOTHING TO DO", task)
         time.sleep(1)
     except Exception as e:
-        print(e)
+        print('Error', e)
         time.sleep(1)
         pass
