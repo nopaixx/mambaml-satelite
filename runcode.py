@@ -70,7 +70,7 @@ class BoxCode():
         self.changed = changed
 
     def clear_inputs(self):
-        for x in inputs:
+        for x in self.inputs:
             del x
         self.inputs = []
 
@@ -253,6 +253,7 @@ def run_celery_project(allboxes, project_id, task, host):
                 print("BOX", x)
                 box = getboxby_name(x, allboxes)
                 if box:
+                    print("CHANGED", box,  d_json['nodes'][x]['properties']['payload']['hasChange'])
                     if d_json['nodes'][x]['properties']['payload']['hasChange'] == 'True':
                         node_name = x
                         python_code = d_json['nodes'][x]['properties']['payload']['python_code']
@@ -275,7 +276,9 @@ def run_celery_project(allboxes, project_id, task, host):
             newboxes = []
             for x in d_json['nodes']:
                 box = getboxby_name(x, changedBox)
-                if box is None:
+                box_exit = getboxby_name(x, allboxes)
+                if box is None and box_exit is None:
+                    print("new box", box)
                     # we can continue
                     node_name = x
                     python_code = d_json['nodes'][x]['properties']['payload']['python_code']
