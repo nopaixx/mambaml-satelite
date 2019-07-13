@@ -24,10 +24,13 @@ for x in tmp_ret:
     ret.append(x)"""
    
     sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
-    parameters = json.loads(params)
+    parameters = None
+    print("PARAMS--->", params)
+    if not params is None:
+        parameters = json.loads(params)
 
-    for param in parameters:
-        str_code = str_code.replace(param['name'], param['value'])
+        for param in parameters:
+            str_code = str_code.replace(param['name'], param['value'])
 
     LOC = ""
 
@@ -135,7 +138,7 @@ class BoxCode():
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
                 if type(out) == type(pd.DataFrame()):
-                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(100).to_json()
+                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(10).to_json()
                     self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = pd.DataFrame(out.columns).to_json()
                     print(pd.DataFrame(out.columns).to_json())
                 index = index + 1
