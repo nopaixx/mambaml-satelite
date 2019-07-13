@@ -362,6 +362,11 @@ def run_celery_project(allboxes, project_id, task, host):
             print("TRAY TO TRAIN TASK -->", task)
             to_trainbox = getboxby_name(task, allboxes)
             to_trainbox.run()
+            # set in standby all boxes init
+            # means user changed but not need to run becausethey want to run another circuit
+            # for x in allboxes:
+            #    if x.getStatus() == 'INIT':
+            #        x.setStatus('STAND-BY')
             print("END TO TRAIN ONE BOX")
 
         # print("BOX_ID-->",box_id)
