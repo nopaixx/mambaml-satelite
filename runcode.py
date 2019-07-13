@@ -136,11 +136,16 @@ class BoxCode():
                 index = index + 1
             # once trained ok then hasChange is False
             self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = False
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] =''
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = ''
+
             self.setStatus('RUNNED')
         except Exception as e:
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_ERROR"
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
-            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = traceback.print_exc()
+            self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = traceback.format_exc()
             self.setStatus('ERROR')
             raise Exception('Run error check error message results!')
             return False
@@ -175,6 +180,8 @@ def run_celery_project(allboxes, project_id, task, host):
 
     d_json = ""
     try:
+
+        valid_boxes = []
         if allboxes is None or task == 'ALL':
             if allboxes is not None:
                 freespace(allboxes)
@@ -222,6 +229,8 @@ def run_celery_project(allboxes, project_id, task, host):
                 dest_box = getboxby_name(dest_box_id, allboxes)
                 dest_id = getportid_to_index(dest_input_port)
                 if dest_box is not None and orig_box is not None and  dest_box.box_id != orig_box.box_id:
+                    valid_boxes.append(dest_box)
+                    valid_boxes.append(orig_box)
                     input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
                     dest_box.inputs.append(input_port)
 
@@ -242,10 +251,11 @@ def run_celery_project(allboxes, project_id, task, host):
             # this loop only analize changed boxes
             for x in d_json['nodes']:
                 box = getboxby_name(x, allboxes)
+                print("CHANGED", box,  d_json['nodes'][x]['properties']['payload']['hasChange'])
                 if box:
-                    print("CHANGED", box,  d_json['nodes'][x]['properties']['payload']['hasChange'])
                     if ((d_json['nodes'][x]['properties']['payload']['hasChange'] == 'True') or
-                        (d_json['nodes'][x]['properties']['payload']['hasChange'] == 'true')) :
+                        (d_json['nodes'][x]['properties']['payload']['hasChange'] == 'true') or
+                        (d_json['nodes'][x]['properties']['payload']['hasChange'] == True)) :
                         node_name = x
                         python_code = d_json['nodes'][x]['properties']['payload']['python_code']
                         n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
@@ -287,7 +297,6 @@ def run_celery_project(allboxes, project_id, task, host):
                 else:
                     print("Nothing to do")
 
-            
             # at this point we can regenerate all links again
             for x in d_json['links']:
                 orig_box_id = d_json['links'][x]['from']['nodeId']
@@ -304,33 +313,49 @@ def run_celery_project(allboxes, project_id, task, host):
                 dest_box = getboxby_name(dest_box_id, allboxes)
                 dest_id = getportid_to_index(dest_input_port)
                 if dest_box is not None and orig_box is not None and  dest_box.box_id != orig_box.box_id:
+                    valid_boxes.append(dest_box)
+                    valid_boxes.append(orig_box)
+
                     input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
                     dest_box.inputs.append(input_port)
 
             # now need analize changedboxes and set run status as 'init'
             # this maybe can do better algoritm
+            print("INIRECURSIVE")
             hasmore = True
+            analizedbox = []
             while hasmore:
                 hasmore = False
                 for box in allboxes:
                     for inputlink in box.inputs:
-                        if (getboxby_name(inputlink.parentBox.box_id, changedBox) or 
-                           getboxby_name(inputlink.parentBox.box_id, newboxes)):
+                        if ((getboxby_name(inputlink.parentBox.box_id, changedBox) or 
+                             getboxby_name(inputlink.parentBox.box_id, newboxes)) and 
+                            (getboxby_name(box.box_id, analizedbox) is None)):
                            # then this box need to be re-run
                            # this box not changed but need to be retrained some parent change
                            # or some parent is new box
                                box.setStatus('INIT')
                                changedBox.append(box)
                                hasmore = True
+                               analizedbox.append(box)
                                break
         
+        # we can remove all empty boxes not conected with input
+        # and outputs
+        for x in allboxes:
+            if getboxby_name(x.box_id, valid_boxes) is None:
+                print("invalidbox", x.str_code)
+                x.setStatus('STAND-BY')
+        
+        print("endrecursive")
         if task == 'ALL':
             # if we retrain ALL then clean an retrain
             pendingTrain = True
             while pendingTrain:
                 pendingTrain=False
                 for x in allboxes:
-                    if x.isRunned()==False:
+                    if ((x.isRunned()==False) and 
+                        (not getboxby_name(x.box_id,valid_boxes) is None)):
                         x.run()
                         pendingTrain=True
         else:
