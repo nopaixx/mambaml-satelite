@@ -15,7 +15,6 @@ def c_run_str_code(inputs, str_code, depend, params):
 #    return 'RUNED'
     global ret
     ret = []
-    print("START RUNNING CLIENT CODE")
     func_name = str_code.split('(')[0][4:].strip()
 
     sniped_code ="""
@@ -25,7 +24,6 @@ for x in tmp_ret:
    
     sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
     parameters = None
-    print("PARAMS--->", params)
     if not params is None:
         parameters = json.loads(params)
 
@@ -39,7 +37,6 @@ for x in tmp_ret:
     else:
         LOC = str_code+ "\r\n" + sniped_code
 
-    print("END RUN CLIENT CODE")    
     exec(LOC)
 
     return ret
@@ -108,7 +105,6 @@ class BoxCode():
         self.outputs = []
 
     def run(self):
-        print("Start running", self.box_id, self.isRunned())
         try:
             if self.isRunned():
                 return True
@@ -121,8 +117,6 @@ class BoxCode():
 
             for i_input in self.inputs:
                 i_input.parentBox.run()
-                print("NUM TOTAL OUTS", len(i_input.parentBox.outputs))
-                print("BUSCANDO INPUT PORT", i_input.numport)
                 myinputs.append(i_input.parentBox.outputs[i_input.numport-i_input.parentBox.n_inputs])
 
             out = c_run_str_code(myinputs, self.str_code, self.depend, self.params)
@@ -134,16 +128,14 @@ class BoxCode():
             # all box done ok
             self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_OK"
             for out in self.outputs:
-                print(type(self.json))
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
                 if type(out) == type(pd.DataFrame()):
                     self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(10).to_json()
                     self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = pd.DataFrame(out.columns).to_json()
-                    print(pd.DataFrame(out.columns).to_json())
                 index = index + 1
             # once trained ok then hasChange is False
-            self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = false
+            self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = False
             self.setStatus('RUNNED')
         except Exception as e:
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
@@ -152,7 +144,6 @@ class BoxCode():
             self.setStatus('ERROR')
             raise Exception('Run error check error message results!')
             return False
-        print("End running", self.box_id, self.isRunned())
         return self.isRunned()
 
 
@@ -212,7 +203,6 @@ def run_celery_project(allboxes, project_id, task, host):
                     if 'parameters' in d_json['nodes'][x]['properties']['payload']:
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
                     
-                    print(project_id, host)
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs, 
                                   d_json, depend, params, False, project_id, host)
                     allboxes.append(box)
@@ -230,7 +220,6 @@ def run_celery_project(allboxes, project_id, task, host):
             
             # need locate dest_box
                 dest_box = getboxby_name(dest_box_id, allboxes)
-                print(dest_box_id)
                 dest_id = getportid_to_index(dest_input_port)
                 if dest_box is not None and orig_box is not None and  dest_box.box_id != orig_box.box_id:
                     input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
@@ -244,7 +233,6 @@ def run_celery_project(allboxes, project_id, task, host):
             d_json = json.loads(r.json()['json'])
             # DO it easy first we start with changed boxes
             # and existing boxes
-            print("INIT")
 
             # at this point we can clear all input ports and recreate again
             # we trust in hasChange recibed from fronted
@@ -253,11 +241,11 @@ def run_celery_project(allboxes, project_id, task, host):
             changedBox = []
             # this loop only analize changed boxes
             for x in d_json['nodes']:
-                print("BOX", x)
                 box = getboxby_name(x, allboxes)
                 if box:
                     print("CHANGED", box,  d_json['nodes'][x]['properties']['payload']['hasChange'])
-                    if d_json['nodes'][x]['properties']['payload']['hasChange'] == 'True':
+                    if ((d_json['nodes'][x]['properties']['payload']['hasChange'] == 'True') or
+                        (d_json['nodes'][x]['properties']['payload']['hasChange'] == 'true')) :
                         node_name = x
                         python_code = d_json['nodes'][x]['properties']['payload']['python_code']
                         n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
@@ -314,7 +302,6 @@ def run_celery_project(allboxes, project_id, task, host):
 
             # need locate dest_box
                 dest_box = getboxby_name(dest_box_id, allboxes)
-                print(dest_box_id)
                 dest_id = getportid_to_index(dest_input_port)
                 if dest_box is not None and orig_box is not None and  dest_box.box_id != orig_box.box_id:
                     input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
@@ -354,7 +341,6 @@ def run_celery_project(allboxes, project_id, task, host):
 
         # print("BOX_ID-->",box_id)
         requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=OK&error=NONE')
-        print("END OK")
     except Exception as e:
         requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=ERROR'+'&error='+str(e))
         print("END WITH ERROR", e)
