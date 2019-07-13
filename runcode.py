@@ -143,7 +143,7 @@ class BoxCode():
                     print(pd.DataFrame(out.columns).to_json())
                 index = index + 1
             # once trained ok then hasChange is False
-            self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = 'False'
+            self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = false
             self.setStatus('RUNNED')
         except Exception as e:
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
