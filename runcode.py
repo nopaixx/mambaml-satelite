@@ -24,7 +24,8 @@ for x in tmp_ret:
    
     sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
     parameters = None
-    if not params is None:
+    print("AAAAA-->",params)
+    if not params is None and params != 'null':
         parameters = json.loads(params)
 
         for param in parameters:
@@ -142,6 +143,7 @@ class BoxCode():
 
             self.setStatus('RUNNED')
         except Exception as e:
+            self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = True
             self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_ERROR"
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
@@ -321,7 +323,6 @@ def run_celery_project(allboxes, project_id, task, host):
 
             # now need analize changedboxes and set run status as 'init'
             # this maybe can do better algoritm
-            print("INIRECURSIVE")
             hasmore = True
             analizedbox = []
             while hasmore:
@@ -344,10 +345,8 @@ def run_celery_project(allboxes, project_id, task, host):
         # and outputs
         for x in allboxes:
             if getboxby_name(x.box_id, valid_boxes) is None:
-                print("invalidbox", x.str_code)
                 x.setStatus('STAND-BY')
         
-        print("endrecursive")
         if task == 'ALL':
             # if we retrain ALL then clean an retrain
             pendingTrain = True
@@ -364,14 +363,19 @@ def run_celery_project(allboxes, project_id, task, host):
             to_trainbox.run()
             # set in standby all boxes init
             # means user changed but not need to run becausethey want to run another circuit
-            # for x in allboxes:
-            #    if x.getStatus() == 'INIT':
-            #        x.setStatus('STAND-BY')
+            for x in allboxes:
+                if x.getStatus() == 'INIT':
+                    print("SET STAND-BY")
+                    x.setStatus('STAND-BY')
             print("END TO TRAIN ONE BOX")
 
         # print("BOX_ID-->",box_id)
         requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=OK&error=NONE')
     except Exception as e:
+        for x in allboxes:
+            if x.getStatus() == 'INIT':
+                print("SET STAND-BY")
+                x.setStatus('STAND-BY')
         requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=ERROR'+'&error='+str(e))
         print("END WITH ERROR", e)
         traceback.print_exc()

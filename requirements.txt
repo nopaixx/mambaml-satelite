@@ -40,3 +40,4 @@ pandas
 numpy
 sklearn
 boto3
+xgboost
