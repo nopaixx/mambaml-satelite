@@ -29,7 +29,14 @@ for x in tmp_ret:
         parameters = json.loads(params)
 
         for param in parameters:
-            str_code = str_code.replace(param['name'], param['value'])
+            print("param-->", param)
+            if param["type"] == "colselector":
+                colsvalues = json.loads(param['value'])
+
+                str_code = str_code.replace(param['name'], str(colsvalues["cols"]))
+                print(str_code)
+            else:
+                str_code = str_code.replace(param['name'], param['value'])
 
     LOC = ""
 
@@ -45,10 +52,11 @@ for x in tmp_ret:
 
 class InputPort():
 
-    def __init__(self, name, numport, parentBox):
+    def __init__(self, name, numport, parentBox, input_port_num):
         self.name = name
         self.numport = numport
         self.parentBox = parentBox
+        self.input_port_num = input_port_num
 
 
 class BoxCode():
@@ -105,6 +113,9 @@ class BoxCode():
         del self.outputs
         self.outputs = []
 
+    def order_inputs(self):
+        self.inputs.sort(key=lambda x: x.input_port_num, reverse=True)
+
     def run(self):
         try:
             if self.isRunned():
@@ -115,7 +126,7 @@ class BoxCode():
             myinputs = []
 
             self.json['nodes'][self.box_id]['properties']['payload']['result']=dict()
-
+            self.order_inputs()
             for i_input in self.inputs:
                 i_input.parentBox.run()
                 myinputs.append(i_input.parentBox.outputs[i_input.numport-i_input.parentBox.n_inputs])
@@ -233,7 +244,9 @@ def run_celery_project(allboxes, project_id, task, host):
                 if dest_box is not None and orig_box is not None and  dest_box.box_id != orig_box.box_id:
                     valid_boxes.append(dest_box)
                     valid_boxes.append(orig_box)
-                    input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box)
+                        
+                    input_port = InputPort(orig_input_port, int(orig_id)-1, orig_box, int(dest_id) - 1)
+
                     dest_box.inputs.append(input_port)
 
         else:
@@ -253,7 +266,6 @@ def run_celery_project(allboxes, project_id, task, host):
             # this loop only analize changed boxes
             for x in d_json['nodes']:
                 box = getboxby_name(x, allboxes)
-                print("CHANGED", box,  d_json['nodes'][x]['properties']['payload']['hasChange'])
                 if box:
                     if ((d_json['nodes'][x]['properties']['payload']['hasChange'] == 'True') or
                         (d_json['nodes'][x]['properties']['payload']['hasChange'] == 'true') or
@@ -281,7 +293,6 @@ def run_celery_project(allboxes, project_id, task, host):
                 box = getboxby_name(x, changedBox)
                 box_exit = getboxby_name(x, allboxes)
                 if box is None and box_exit is None:
-                    print("new box", box)
                     # we can continue
                     node_name = x
                     python_code = d_json['nodes'][x]['properties']['payload']['python_code']
