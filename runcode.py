@@ -9,7 +9,57 @@ import sys
 import requests
 import traceback
 import gc
+from joblib import dump, load
+import redis as saver_c
+import base64
 
+
+# workarround to predict
+# predict try to get model from redis memory
+#   if not exist then download from s3 and update redis memory again for future processing
+# workarround serialize
+# binaryze the object and convert to b64 string
+# save object to s3
+# update redis memory
+
+
+def mambaml_load_model(index):
+    # this is a special function
+    # all mambaml functions start with mambaml
+    # this function locate the parent object
+    # and get the model from memory instead of inputport
+    # this function is usefule for predict endpoint
+    # works in the same workarround
+    pass
+
+
+# joblib.load(io.BytesIO(new_file.read()))
+def file_to_b64(filename):
+    with open(filename, "rb") as f:
+        binfile=f.read()
+    b64_file = base64.b64encode(binfile)
+    return b64_file
+
+def save_c_file(filename, key):
+    b64_file = file_to_b64(filename) 
+    # one day
+    saver_c.set(key, b64_file, ex=60*60*24)
+
+def sk_learn_model_serialize_object_and_upload_to_s3(model, project_id, box_id):
+    filename = 'sklearn_{}_{}.joblib'.format(str(project_id), box_id)
+    dump(model, filename, compress = 1) 
+    # TODO upload to s3 first if we have problems with redis
+    save_c_file(filename, filename)
+    os.remove(filename)
+    # upload direct to s3??
+
+def sk_learn_best_estimator_model_serialize_object_and_upload_to_s3(model, project_id, box_id):
+    filename = 'sklearnbestestimator_{}_{}.joblib'.format(str(project_id), box_id)
+    dump(model.best_estimator_, filename, compress = 1)
+    save_c_file(filename, filename)
+    os.remove(filename)
+    # TODO upload to s3 first if we have problems with redis
+    # upload direct to s3??
 
 def c_run_str_code(inputs, str_code, depend, params):
 #    return 'RUNED'
@@ -24,7 +74,6 @@ for x in tmp_ret:
    
     sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
     parameters = None
-    print("AAAAA-->",params)
     if not params is None and params != 'null':
         parameters = json.loads(params)
 
@@ -63,7 +112,7 @@ class BoxCode():
 
     def __init__(self, str_code, box_id, n_inputs,
                  n_outputs, json, depend, params, changed,
-                 project_id, host):
+                 project_id, host, serialize_outputs):
         self.project_id = project_id
         self.host = host
         self.str_code = str_code
@@ -77,6 +126,7 @@ class BoxCode():
         self.json = json
         self.params = params
         self.changed = changed
+        self.serialize_outputs = serialize_outputs
 
     def clear_inputs(self):
         for x in self.inputs:
@@ -84,13 +134,14 @@ class BoxCode():
         self.inputs = []
 
     def setChangedBox(self, str_code, box_id, n_inputs, 
-                      n_outputs, json, depend, params, changed, project_id, host):
+                      n_outputs, json, depend, params, changed, project_id, host, serialize_outputs):
         # to set trained false
         self.freespace()
         # if this box changed then result of preview run is empty
         self.json['nodes'][self.box_id]['properties']['payload']['result']=dict()
         # reset all parameter with new values
-        self.__init__(str_code, box_id, n_inputs, n_outputs, json, depend, params, changed, project_id, host)
+        self.__init__(str_code, box_id, n_inputs, n_outputs, json, depend,
+                      params, changed, project_id, host, serialize_outputs)
         return None
 
     def isRunned(self):
@@ -151,6 +202,22 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] =''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = ''
+           
+            if self.serialize_outputs != "":
+                # then they have a serialized outputs
+                for out in self.serialize_outputs:
+                    port_index = out['port_index']
+                    port_type = out['model_type']
+                    if port_type == 'Sklearn Model':
+                       sk_learn_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
+                                                                        self.project_id, 
+                                                                        self.box_id)
+                    elif: port_type == 'GridSearch Model':
+                       sk_learn_best_estimator_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
+                                                                                       self.project_id, 
+                                                                                       self.box_id)
+                    else:
+                        raise Exception(port_type + ' model type not allowed yet!')
 
             self.setStatus('RUNNED')
         except Exception as e:
@@ -208,7 +275,7 @@ def run_celery_project(allboxes, project_id, task, host):
                     import numpy as np
                     import pandas as pd
                     X = pd.DataFrame(np.array([[1, 1], [1, 2], [2, 2], [2, 3]]))
-                    box = BoxCode("", node_name, 0, 1, d_json,"", "", False, project_id, host)
+                    box = BoxCode("", node_name, 0, 1, d_json,"", "", False, project_id, host, "")
                     box.setStatus('RUNNED')
                     box.outputs.append(X)
                     # for now dummy data on dataset
@@ -219,12 +286,16 @@ def run_celery_project(allboxes, project_id, task, host):
                     n_inputs = d_json['nodes'][x]['properties']['payload']['n_input_ports']
                     n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
                     depend = d_json['nodes'][x]['properties']['payload']['depen_code']
-                    params = ''
+                    params = '' # input parameters
+                    serialize_outputs = '' # output parameters to serialized
                     if 'parameters' in d_json['nodes'][x]['properties']['payload']:
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
                     
+                    if 'outputs' in d_json['nodes'][x]['properties']['payload']:
+                        serialize_outputs = d_json['nodes'][x]['properties']['payload']['outputs']
+
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs, 
-                                  d_json, depend, params, False, project_id, host)
+                                  d_json, depend, params, False, project_id, host, serialize_outputs)
                     allboxes.append(box)
 
             for x in d_json['links']:
@@ -276,11 +347,15 @@ def run_celery_project(allboxes, project_id, task, host):
                         n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
                         depend = d_json['nodes'][x]['properties']['payload']['depen_code']
                         params = ''
+                        serialize_utputs = ''
                         if 'parameters' in d_json['nodes'][x]['properties']['payload']:
                             params = d_json['nodes'][x]['properties']['payload']['parameters']
 
+                        if 'outputs' in d_json['nodes'][x]['properties']['payload']:
+                            serialize_outputs = d_json['nodes'][x]['properties']['payload']['outputs']
+
                         box.setChangedBox(python_code, node_name, n_inputs, n_outputs,
-                                          d_json, depend, params, False, project_id, host)
+                                          d_json, depend, params, False, project_id, host, serialize_outputs)
 
                         # save changed box and existing maybe need latter
                         changedBox.append(box)
@@ -300,11 +375,15 @@ def run_celery_project(allboxes, project_id, task, host):
                     n_outputs = d_json['nodes'][x]['properties']['payload']['n_output_ports']
                     depend = d_json['nodes'][x]['properties']['payload']['depen_code']
                     params = ''
+                    serialize_outputs = ''
                     if 'parameters' in d_json['nodes'][x]['properties']['payload']:
                         params = d_json['nodes'][x]['properties']['payload']['parameters']
 
+                    if 'outputs' in d_json['nodes'][x]['properties']['payload']:
+                        serialize_outputs = d_json['nodes'][x]['properties']['payload']['outputs']
+
                     box = BoxCode(python_code, node_name, n_inputs, n_outputs,
-                                  d_json, depend, params, False, project_id, host)
+                                  d_json, depend, params, False, project_id, host, serialize_outputs)
                     allboxes.append(box)
                     newboxes.append(box)
                 else:

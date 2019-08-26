@@ -41,3 +41,6 @@ numpy
 sklearn
 boto3
 xgboost
+joblib
+redis==3.3.8
+base64
