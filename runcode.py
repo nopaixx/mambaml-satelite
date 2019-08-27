@@ -22,7 +22,6 @@ import base64
 # save object to s3
 # update redis memory
 
-
 def mambaml_load_model(index):
     # this is a special function
     # all mambaml functions start with mambaml
@@ -43,7 +42,9 @@ def file_to_b64(filename):
 def save_c_file(filename, key):
     b64_file = file_to_b64(filename) 
     # one day
-    saver_c.set(key, b64_file, ex=60*60*24)
+    saver_x.set(key, b64_file, ex=60*60*24)
+    print("OBJECT SERIALIZED IN REDIS OK!!!!!")
+    pass
 
 def sk_learn_model_serialize_object_and_upload_to_s3(model, project_id, box_id):
     filename = 'sklearn_{}_{}.joblib'.format(str(project_id), box_id)
@@ -202,23 +203,28 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] =''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = ''
-           
-            if self.serialize_outputs != "":
+            
+            # print("OUTTTTT-->", self.serialize_outputs)
+            if self.serialize_outputs!=None and self.serialize_outputs != "[]":
                 # then they have a serialized outputs
-                for out in self.serialize_outputs:
-                    port_index = out['port_index']
-                    port_type = out['model_type']
-                    if port_type == 'Sklearn Model':
+                s_outputs = json.loads(self.serialize_outputs)
+                
+                print("SSSSSOUT----->", s_outputs)
+                for out in s_outputs:
+                    print("OUT----->", out)
+                    port_index = int(out['outputnum'])
+                    port_type = out['Outputtype']
+                    if port_type == 'sklearn_model' or port_type == 'sklean_model':
                        sk_learn_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
                                                                         self.project_id, 
                                                                         self.box_id)
-                    elif: port_type == 'GridSearch Model':
+                    elif port_type == 'GridSearch Model':
                        sk_learn_best_estimator_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
                                                                                        self.project_id, 
                                                                                        self.box_id)
                     else:
                         raise Exception(port_type + ' model type not allowed yet!')
-
+            print("RUNNED")
             self.setStatus('RUNNED')
         except Exception as e:
             self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = True
@@ -458,15 +464,17 @@ def run_celery_project(allboxes, project_id, task, host):
                     print("SET STAND-BY")
                     x.setStatus('STAND-BY')
             print("END TO TRAIN ONE BOX")
-
-        # print("BOX_ID-->",box_id)
-        requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=OK&error=NONE')
+        url = host+'/projects/set_status?id='+project_id+'&stat=OK&error=NONE'+'&data='+json.dumps(d_json)
+        print("URLLLLL-->", url)
+        requests.get(url)
     except Exception as e:
         for x in allboxes:
             if x.getStatus() == 'INIT':
                 print("SET STAND-BY")
                 x.setStatus('STAND-BY')
-        requests.get(host+'/projects/set_status?id='+project_id+'&data='+json.dumps(d_json)+'&stat=ERROR'+'&error='+str(e))
+        url = host+'/projects/set_status?id='+project_id+'&stat=ERROR'+'&error='+str(e)+'&data='+json.dumps(d_json)
+
+        requests.get(url)
         print("END WITH ERROR", e)
         traceback.print_exc()
 
@@ -501,6 +509,9 @@ def run_str_code(func):
 allproject = None
 project_id = sys.argv[1]
 host = sys.argv[2]
+print(sys.argv[3])
+saver_x = saver_c.Redis(host=sys.argv[3], port=6379, db=0)
+
 print("Starting project", project_id, host)
 while True:
     print("ASK")
