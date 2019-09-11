@@ -249,9 +249,9 @@ class BoxCode():
             for out in self.outputs:
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
-                print("Type-->", type(out))
                 if type(out) == type(pd.DataFrame()):
-                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(100).to_json()
+                    print("SAVING JSON", out.head(100).to_json())
+                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(1).to_json(force_ascii=True)
                     self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = pd.DataFrame(out.columns).to_json()
                 index = index + 1
             # once trained ok then hasChange is False
@@ -506,13 +506,10 @@ def run_celery_project(allboxes, project_id, task, host):
             # if we retrain ALL then clean an retrain
             pendingTrain = True
             while pendingTrain:
-                print("Pending train", allboxes)
                 pendingTrain=False
                 for x in allboxes:
-                    print("Train", x, x.isRunned())
                     if ((x.isRunned()==False) and 
                         (not getboxby_name(x.box_id, valid_boxes) is None)):
-                        print("Train box")
                         x.run()
                         pendingTrain=True
         else:
