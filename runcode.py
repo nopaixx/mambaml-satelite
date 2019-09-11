@@ -211,7 +211,7 @@ class BoxCode():
             
             print("OUTTTTT-->", self.serialize_outputs)
 
-            if self.serialize_outputs!=None and self.serialize_outputs!=null and self.serialize_outputs != "[]":
+            if self.serialize_outputs!=None and self.serialize_outputs!='null' and self.serialize_outputs != "[]":
                 # then they have a serialized outputs
                 s_outputs = json.loads(self.serialize_outputs)
                 
