@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import pandas as pd
 import numpy as np
@@ -9,11 +10,13 @@ import sys
 import requests
 import traceback
 import gc
-from joblib import dump, load
+from joblib import dump as joblib_dump, load as joblib_load
+#from sklearn.externals.joblib import dump as joblib_dump
+#from sklearn.externals.joblib import load as joblib_load
 import redis as saver_c
 import base64
 
-
+c_mambaml_load_model = 'mambaml_load_model('
 # workarround to predict
 # predict try to get model from redis memory
 #   if not exist then download from s3 and update redis memory again for future processing
@@ -22,17 +25,35 @@ import base64
 # save object to s3
 # update redis memory
 
-def mambaml_load_model(index):
+def mambaml_load_model(key):
     # this is a special function
     # all mambaml functions start with mambaml
     # this function locate the parent object
     # and get the model from memory instead of inputport
     # this function is usefule for predict endpoint
     # works in the same workarround
+    # this method return a object getted from redis
+    model_type = key.split('_')[0]
+    print("MODEL_TYPE", model_type)
+    if model_type == 'sklearn' or model_type == 'sklean':
+        b64_object = saver_x.get(key)
+        stream = b64_to_stream(b64_object) 
+        ret = joblib_load(stream)
+        print("LOAD", type(ret))
+        print("LOAD", ret)
+        return joblib_load(stream)
+    elif model_type == 'sklearnbestestimator':
+        b64_object = saver_x.get(key)
+        stream = b64_to_stream(b64_object)
+        return joblib_load(stream)
     pass
 
 
 # joblib.load(io.BytesIO(new_file.read()))
+def b64_to_stream(b64data):
+    stream = io.BytesIO(base64.b64decode(b64data))
+    return stream
+
 def file_to_b64(filename):
     with open(filename, "rb") as f:
         binfile=f.read()
@@ -45,27 +66,28 @@ def save_c_file(filename, key):
     # TODO  guardar en s3
     # save in cache
     saver_x.set(key, b64_file, ex=60*60*24)
-    print("OBJECT SERIALIZED IN REDIS OK!!!!!")
+    print("OBJECT SERIALIZED IN REDIS OK!!!!!", key)
     pass
 
-def sk_learn_model_serialize_object_and_upload_to_s3(model, project_id, box_id):
-    filename = 'sklearn_{}_{}.joblib'.format(str(project_id), box_id)
-    dump(model, filename, compress = 1) 
+def sk_learn_model_serialize_object_and_upload_to_s3(model, project_id, box_id, port_index):
+    filename = 'sklearn_{}_{}_{}.joblib'.format(str(project_id), box_id, port_index)
+    print("SAVE", type(model))
+    print("SAVE", model)
+    joblib_dump(model, filename, compress = False) 
     # TODO upload to s3 first if we have problems with redis
     save_c_file(filename, filename)
     os.remove(filename)
     # upload direct to s3??
 
 def sk_learn_best_estimator_model_serialize_object_and_upload_to_s3(model, project_id, box_id):
-    filename = 'sklearnbestestimator_{}_{}.joblib'.format(str(project_id), box_id)
-    dump(model.best_estimator_, filename, compress = 1)
+    filename = 'sklearnbestestimator_{}_{}_{}.joblib'.format(str(project_id), box_id, port_index)
+    joblib_dump(model.best_estimator_, filename, compress = False)
     save_c_file(filename, filename)
     os.remove(filename)
     # TODO upload to s3 first if we have problems with redis
     # upload direct to s3??
 
-def c_run_str_code(inputs, str_code, depend, params):
-#    return 'RUNED'
+def c_run_str_code(inputs, str_code, depend, params, input_boxes):
     global ret
     ret = []
     func_name = str_code.split('(')[0][4:].strip()
@@ -76,6 +98,8 @@ for x in tmp_ret:
     ret.append(x)"""
    
     sniped_code = sniped_code.replace('FUNC_NAME',func_name,1)
+
+    # input paramters
     parameters = None
     if not params is None and params != 'null':
         parameters = json.loads(params)
@@ -90,6 +114,17 @@ for x in tmp_ret:
             else:
                 str_code = str_code.replace(param['name'], param['value'])
 
+    # if some saver information FOR NOW ONLY ONE mamab_load_model in box
+    # cold be multiples but for now only 1 allowed
+    # necessiamos parsear el codigo en busca de algo como mamba_load_model(
+    line = str_code.find(c_mambaml_load_model)
+    if line > 0:
+        port_index = int(str_code[line+len(c_mambaml_load_model):line+len(c_mambaml_load_model)+1])
+        save_key = input_boxes[port_index].parentBox.get_saver_key(input_boxes[port_index].numport-input_boxes[port_index].parentBox.n_inputs)
+        print("RETRIVED KEY", port_index, save_key)
+        str_code = str_code.replace(c_mambaml_load_model+str(port_index), c_mambaml_load_model+"'"+save_key+"'")
+        print("RETRIVED KEY", port_index, save_key)
+        
     LOC = ""
 
     if depend:
@@ -97,6 +132,9 @@ for x in tmp_ret:
     else:
         LOC = str_code+ "\r\n" + sniped_code
 
+    print("NEWCODE", LOC)
+    # debemos remplazar el mamba_load_model(index_port_id) por
+    # mamba_load_model(BOX_PARENT_ID of index 0, index_port_id)
     exec(LOC)
 
     return ret
@@ -131,6 +169,20 @@ class BoxCode():
         self.changed = changed
         self.serialize_outputs = serialize_outputs
 
+    def get_saver_key(self, output_num):
+        # necessitamos devolver algo como asi
+        if self.serialize_outputs!=None and self.serialize_outputs!='null' and self.serialize_outputs != "[]":
+            s_outputs = json.loads(self.serialize_outputs)
+            for out in s_outputs:
+                port_index = int(out['outputnum'])
+                port_type = out['Outputtype']
+                print("analize", port_index, output_num)
+                if port_index == output_num and (port_type == 'sklearn_model' or port_type == 'sklean_model'):
+                    return 'sklearn_{}_{}_{}.joblib'.format(str(self.project_id), self.box_id, str(port_index))
+                elif port_index == output_num and port_type == 'GridSearch Model':
+                    return 'sklearnbestestimator_{}_{}_{}.joblib'.format(str(project_id), box_id, str(port_index))
+        return None
+ 
     def clear_inputs(self):
         for x in self.inputs:
             del x
@@ -168,7 +220,7 @@ class BoxCode():
         self.outputs = []
 
     def order_inputs(self):
-        self.inputs.sort(key=lambda x: x.input_port_num, reverse=True)
+        self.inputs.sort(key=lambda x: x.input_port_num, reverse=False)
 
     def run(self):
         try:
@@ -182,20 +234,19 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']=dict()
             self.order_inputs()
             for i_input in self.inputs:
+                print(i_input.parentBox.box_id, i_input.input_port_num)
                 i_input.parentBox.run()
                 myinputs.append(i_input.parentBox.outputs[i_input.numport-i_input.parentBox.n_inputs])
 
-            out = c_run_str_code(myinputs, self.str_code, self.depend, self.params)
+            out = c_run_str_code(myinputs, self.str_code, self.depend, self.params, self.inputs)
 
             for p_out in out:
                 self.outputs.append(p_out)
         # after run 
             index = 0
             # all box done ok
-            print("AL--gooo")
             self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_OK"
             for out in self.outputs:
-                print("AL-Working with ouputs")
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
 
@@ -209,25 +260,25 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = ''
             
-            print("OUTTTTT-->", self.serialize_outputs)
-
             if self.serialize_outputs!=None and self.serialize_outputs!='null' and self.serialize_outputs != "[]":
                 # then they have a serialized outputs
                 s_outputs = json.loads(self.serialize_outputs)
                 
-                print("SSSSSOUT----->", s_outputs)
                 for out in s_outputs:
                     print("OUT----->", out)
                     port_index = int(out['outputnum'])
                     port_type = out['Outputtype']
                     if port_type == 'sklearn_model' or port_type == 'sklean_model':
+                       print("serialized", self.outputs[port_index])
                        sk_learn_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
                                                                         self.project_id, 
-                                                                        self.box_id)
+                                                                        self.box_id, 
+                                                                        str(port_index))
                     elif port_type == 'GridSearch Model':
                        sk_learn_best_estimator_model_serialize_object_and_upload_to_s3(self.outputs[port_index], 
                                                                                        self.project_id, 
-                                                                                       self.box_id)
+                                                                                       self.box_id,
+                                                                                       str(port_index))
                     else:
                         raise Exception(port_type + ' model type not allowed yet!')
             print("RUNNED")
