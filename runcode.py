@@ -42,6 +42,8 @@ def file_to_b64(filename):
 def save_c_file(filename, key):
     b64_file = file_to_b64(filename) 
     # one day
+    # TODO  guardar en s3
+    # save in cache
     saver_x.set(key, b64_file, ex=60*60*24)
     print("OBJECT SERIALIZED IN REDIS OK!!!!!")
     pass
@@ -190,12 +192,15 @@ class BoxCode():
         # after run 
             index = 0
             # all box done ok
+            print("AL--gooo")
             self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_OK"
             for out in self.outputs:
+                print("AL-Working with ouputs")
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]=dict()
                 self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['status'] = 'OK'
+
                 if type(out) == type(pd.DataFrame()):
-                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(10).to_json()
+                    self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['first100'] = out.head(100).to_json()
                     self.json['nodes'][self.box_id]['properties']['payload']['result']['out'+str(index)]['columns'] = pd.DataFrame(out.columns).to_json()
                 index = index + 1
             # once trained ok then hasChange is False
@@ -204,8 +209,9 @@ class BoxCode():
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_args'] = ''
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_trace'] = ''
             
-            # print("OUTTTTT-->", self.serialize_outputs)
-            if self.serialize_outputs!=None and self.serialize_outputs != "[]":
+            print("OUTTTTT-->", self.serialize_outputs)
+
+            if self.serialize_outputs!=None and self.serialize_outputs!=null and self.serialize_outputs != "[]":
                 # then they have a serialized outputs
                 s_outputs = json.loads(self.serialize_outputs)
                 
@@ -227,6 +233,7 @@ class BoxCode():
             print("RUNNED")
             self.setStatus('RUNNED')
         except Exception as e:
+            print("SOME ERROR")
             self.json['nodes'][self.box_id]['properties']['payload']['hasChange'] = True
             self.json['nodes'][self.box_id]['properties']['payload']['result']['status']="DONE_ERROR"
             self.json['nodes'][self.box_id]['properties']['payload']['result']['error_message'] = str(e)
